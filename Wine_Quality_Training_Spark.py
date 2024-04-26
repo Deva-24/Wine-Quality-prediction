@@ -14,13 +14,13 @@ def clean_data(df):
     return df.select(*(col(c).cast("double").alias(c.strip("\"")) for c in df.columns))
 
 if __name__ == "__main__":
-    print("Starting Spark Application")
+    print("Starting AWS - Spark Application")
 
 
     spark = SparkSession.builder.appName("WineQualityPrediction").getOrCreate()
 
-    sc = spark.sparkContext
-    sc.setLogLevel('ERROR')
+    scanner = spark.sparkContext
+    scanner.setLogLevel('ERROR')
 
     spark._jsc.hadoopConfiguration().set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
 
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     
     train_data_set = clean_data(df)
 
-    print(f"Reading validation CSV file from {valid_path}")
+    print(f"Reading the CSV file from {valid_path}")
     df = (spark.read
           .format("csv")
           .option('header', 'true')
@@ -53,17 +53,17 @@ if __name__ == "__main__":
                     'chlorides', 'free sulfur dioxide', 'total sulfur dioxide', 'density',
                     'pH', 'sulphates', 'alcohol', 'quality']
 
-    print("Creating VectorAssembler")
+    print("VectorAssembler")
     assembler = VectorAssembler(inputCols=all_features, outputCol='features')
     
-    print("Creating StringIndexer")
+    print("StringIndexer")
     indexer = StringIndexer(inputCol="quality", outputCol="label")
 
-    print("Caching data for faster access")
+    print("Caching data")
     train_data_set.cache()
     valid_data_set.cache()
     
-    print("Creating RandomForestClassifier")
+    print("RandomForestClassifier")
     rf = RandomForestClassifier(labelCol='label', 
                                 featuresCol='features',
                                 numTrees=150,
@@ -71,7 +71,7 @@ if __name__ == "__main__":
                                 seed=150,
                                 impurity='gini')
     
-    print("Creating Pipeline for training")
+    print("Pipeline for training")
     pipeline = Pipeline(stages=[assembler, indexer, rf])
     model = pipeline.fit(train_data_set)
 
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     predictions = model.transform(valid_data_set)
 
     print("Evaluating the trained model on the validation set")
-    results = predictions.select(['prediction', 'label'])
+    res = predictions.select(['prediction', 'label'])
     evaluator = MulticlassClassificationEvaluator(labelCol='label', 
                                                   predictionCol='prediction', 
                                                   metricName='accuracy')
@@ -88,7 +88,7 @@ if __name__ == "__main__":
     accuracy = evaluator.evaluate(predictions)
     print(f'Test Accuracy of wine prediction model = {accuracy}')
     
-    metrics = MulticlassMetrics(results.rdd.map(tuple))
+    metrics = MulticlassMetrics(res.rdd.map(tuple))
     print(f'Weighted f1 score of wine prediction model = {metrics.weightedFMeasure()}')
 
     print("Retraining model on multiple parameters using CrossValidator")
@@ -114,17 +114,13 @@ if __name__ == "__main__":
     model = cvmodel.bestModel
     
 
-    predictions = model.transform(valid_data_set)
-    results = predictions.select(['prediction', 'label'])
-    accuracy = evaluator.evaluate(predictions)
-    print(f'Test Accuracy of wine prediction model (after CrossValidation) = {accuracy}')
+    preds = model.transform(valid_data_set)
+    res = preds.select(['prediction', 'label'])
+    acry = evaluator.evaluate(preds)
+    print(f'Test Accuracy of wine prediction model (after CrossValidation) = {acry}')
     
-    metrics = MulticlassMetrics(results.rdd.map(tuple))
+    metrics = MulticlassMetrics(res.rdd.map(tuple))
     print(f'Weighted f1 score of wine prediction model (after CrossValidation) = {metrics.weightedFMeasure()}')
-
-    # print("Saving the best model to S3")
-    # model_path = output_path
-    # model.write().overwrite().save(model_path)
-    
+ 
 
     sys.exit(0)
